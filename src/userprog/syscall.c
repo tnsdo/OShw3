@@ -3,12 +3,13 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/thread.h"
 #include "devices/input.h"
+#include "devices/shutdown.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "threads/palloc.h"
 #include "threads/init.h"
+#include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #define STDIN 0
 #define STDOUT 1
@@ -24,11 +25,6 @@ int write(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
-
-int add_file_to_fdt(struct file *file);
-struct file *find_file_by_fd(int fd);
-void remove_file_from_fdt(int fd);
-
 
 static void syscall_handler (struct intr_frame *);
 
@@ -94,7 +90,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 }
 
 void halt(void){
-	power_off();
+	shutdown_power_off();
 }
 
 void exit(int status)
@@ -127,10 +123,12 @@ pid_t exec(const char *cmd_line){
 }
 
 
-void check_address(void* vaddr){
-  if(vaddr==NULL){exit(-1);}
-  if(!is_user_vaddr(vaddr)){exit(-1);}
-  if(!pagedir_get_page(thread_current()->pagedir, vaddr)==NULL){exit(-1);}
+void check_address(const void *addr) {
+    struct thread *cur = thread_current();
+
+    if (addr == NULL || !is_user_vaddr(addr) || pagedir_get_page(cur->pagedir, addr) == NULL) {
+        exit(-1);
+    }
 }
 
 int process_wait(tid_t child_tid UNUSED){
@@ -160,88 +158,65 @@ bool remove (const char *file) {
 
 int open(const char *file){
 	check_address(file);
-	fdt[cur->fd_idx] = file;
-	return cur->fd_idx;
 }
 
-int filesize(int fd){
-	struct file *open_file = find_file_by_fd(fd);
-	if (open_file == NULL){
-		return -1;
-	}
-	return file_length(open_file);
-}
-struct file *find_file_by_fd(int fd){
-	struct thread *cur = thread_current();
-	if (fd < 0 || fd >= FDCOUNT_LIMIT){
-		return NULL;
-	}
-	return cur->fd_table[fd];
-}
-
-int read(int fd, void *buffer, unsigned size) {
-	check_address(buffer);
-
-	int read_result;
-	struct thread *cur = thread_current();
-	struct file *file_fd = find_file_by_fd(fd);
-
-	if (fd == 0){
-		*(char *)buffer = input_getc();
-		read_result = size;
-	}
-	else {
-		if (find_file_by_fd(fd) == NULL) {
-			return -1;
-		}
-		else {
-			lock_acquire(&filesys_lock);
-			read_result = file_read(find_file_by_fd(fd), buffer, size);
-			lock_release(&filesys_lock);
-		}
-	}
-	return read_result;
+int read(int fd, void *buffer, unsigned int size){
+  int result;
+  uint8_t temp;
+  if(fd<0 || fd==1 || fd>=FDTABLE_SIZE){exit(-1);}
+  lock_acquire(&filesys_lock);
+  if(fd==0){
+    for(result=0;(result<size) && (temp=input_getc());result++){
+      *(uint8_t*)(buffer+result)=temp;
+    }
+  }
+  else{
+    struct file* f=process_get_file(fd);
+    if(f==NULL){
+      lock_release(&filesys_lock);
+      exit(-1);
+    }
+    result=file_read(f, buffer, size);
+  }
+  lock_release(&filesys_lock);
+  return result;
 }
 
-int write(int fd, const void *buffer, unsigned size) {
-	check_address(buffer);
-
-	int write_result;
-	lock_acquire(&filesys_lock);
-	if (fd == 1) {
-		putbuf(buffer, size);
-		write_result = size;
-	}
-	else {
-		if (find_file_by_fd(fd) != NULL) {
-			write_result = file_write(find_file_by_fd(fd), buffer, size);
-		}
-		else {
-			write_result = -1;
-		}
-	}
-	lock_release(&filesys_lock);
-	return write_result;
+int write(int fd, const void* buffer, unsigned int size){
+  int file_write_result;
+  struct file* f;
+  if(fd<=0 || fd>=FDTABLE_SIZE){exit(-1);}
+  lock_acquire(&filesys_lock);
+  if(fd==1){
+    putbuf(buffer, size);
+    lock_release(&filesys_lock);
+    return size;
+  }
+  else{
+    f=process_get_file(fd);
+    if(f==NULL){
+      lock_release(&filesys_lock);
+      exit(-1);
+    }
+    file_write_result=file_write(f, buffer, size);
+    lock_release(&filesys_lock);
+    return file_write_result;
+  }
 }
 
-void seek(int fd, unsigned position) {
-	struct file *seek_file = find_file_by_fd(fd);
-	if (seek_file == NULL) {
-		return;
-	}
-	file_seek(seek_file, position);
+void seek(int fd, unsigned int position){
+  struct file* f=process_get_file(fd);
+  if(f==NULL){exit(-1);}
+  file_seek(f, position);
 }
 
-unsigned tell(int fd) {
-	struct file *tell_file = find_file_by_fd(fd);
-	if (tell_file <= 2) {
-		return;
-	}
-	return file_tell(tell_file);
+unsigned int tell(int fd){
+  struct file* f=process_get_file(fd);
+  if(f==NULL){exit(-1);}
+  return file_tell(f);
 }
 
 
 void close(int fd) {
 	process_close_file(fd);
 }
-

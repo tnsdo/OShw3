@@ -129,13 +129,8 @@ struct thread
     struct file *fd_table[FDTABLE_SIZE];
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-#endif
 
-    /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
-
-
-    /* system call */
+        /* system call */
     int exit_status;
     int fd_idx;
     struct thread *parent_thread;
@@ -143,9 +138,14 @@ struct thread
     struct semaphore load_sema;
     struct list_elem child_thread_elem;
     struct list child_threads;
-    bool loag_flag;
+    bool load_flag;
     bool exit_flag;
 
+
+#endif
+
+    /* Owned by thread.c. */
+    unsigned magic;                     /* Detects stack overflow. */
   };
 
 // less wakeup time

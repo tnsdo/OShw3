@@ -15,6 +15,5 @@ struct thread *get_child_process(int pid);
 void process_close_file(int fd);
 int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
-void process_close_file(int fd); // 선언 중복 주의!
-
+void process_close_file(int fd);
 #endif /* userprog/process.h */
