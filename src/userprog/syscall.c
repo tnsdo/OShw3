@@ -131,19 +131,8 @@ void check_address(const void *addr) {
     }
 }
 
-int process_wait(tid_t child_tid UNUSED){
-	struct thread *child = get_child_with_pid(child_tid);
-
-	if(child == NULL)
-		return -1;
-	sema_down(&child->wait_sema);
-
-	int exit_status = child->exit_status;
-
-	list_remove(&child->child_elem);
-	sema_up(&child->free_sema);
-
-	return exit_status;
+int wait(pid_t pid){
+  process_wait(pid);
 }
 
 bool create (const char *file, unsigned initial_size) {
@@ -156,8 +145,19 @@ bool remove (const char *file) {
 	return(filesys_remove(file));
 }
 
-int open(const char *file){
-	check_address(file);
+int open(const char* file){
+  int fd;
+  struct file* f;
+  if(file==NULL){exit(-1);}
+  lock_acquire(&filesys_lock);
+  f=filesys_open(file);
+  if(f==NULL){
+    lock_release(&filesys_lock);
+    return -1;
+  }
+  fd=process_add_file(f);
+  lock_release(&filesys_lock);
+  return fd;
 }
 
 int read(int fd, void *buffer, unsigned int size){
@@ -216,6 +216,11 @@ unsigned int tell(int fd){
   return file_tell(f);
 }
 
+int filesize(int fd){
+  struct file* f=process_get_file(fd);
+  if(f==NULL){exit(-1);}
+  return file_length(f);
+}
 
 void close(int fd) {
 	process_close_file(fd);
