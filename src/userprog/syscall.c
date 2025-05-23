@@ -15,8 +15,6 @@
 #define STDOUT 1
 
 
-typedef int pid_t;
-
 _Bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
 int open(const char *file);
