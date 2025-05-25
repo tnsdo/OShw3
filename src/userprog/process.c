@@ -236,21 +236,23 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
   
-  char *file_name_copy = malloc(strlen(file_name) + 1);
-  strlcpy(file_name_copy, file_name, strlen(file_name)+1);
+  char *file_name_copy;
   char *save_ptr;
-  char *file_name_first_word = strtok_r(file_name_copy, " ", &save_ptr);
+  char *file_name_first_word;
 
-  int process_wait (tid_t child_tid UNUSED) {
-  timer_msleep(2000);
-  return -1;
-}
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
 
+
+  file_name_copy=malloc(sizeof(char)*(strlen(file_name)+1));
+  strlcpy(file_name_copy, file_name, (strlen(file_name)));
+  file_name_copy[strlen(file_name)]='\0';
+  file_name_first_word=strtok_r(file_name_copy, " ", &save_ptr);
+  printf("\n\n%s\n\n", file_name_first_word);
   file = filesys_open (file_name_first_word);
   if (file == NULL)
     {
@@ -261,7 +263,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   free(file_name_copy);
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  //file = filesys_open (file_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -343,6 +345,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
+  construct_stack(file_name,esp);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
