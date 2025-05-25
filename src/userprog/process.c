@@ -29,6 +29,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
+  printf("process_execute: %s\n", file_name);
   char *fn_copy;
   tid_t tid;
 
@@ -51,6 +52,7 @@ process_execute (const char *file_name)
 static void
 start_process (void *file_name_)
 {
+  printf("start_process begin\n");
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
@@ -75,6 +77,7 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+  printf("start_process load done: success=%d\n", success);
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -232,12 +235,30 @@ load (const char *file_name, void (**eip) (void), void **esp)
   off_t file_ofs;
   bool success = false;
   int i;
+  char *file_name_copy;
+  char *file_name_first_word;
+  char *save_ptr;
 
+  printf("load: entering...\n");
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
+
+  strlcpy(file_name_copy, file_name, (strlen(file_name)+1));
+  file_name_first_word=strtok_r(file_name_copy, " ", &save_ptr);
+  printf("\n\n%s\n\n", file_name_first_word);
+
+  /* Open executable file. */
+  file = filesys_open (file_name_first_word);
+  if (file == NULL)
+    {
+      printf ("load: %s: open failed\n", file_name_first_word);
+      free(file_name_copy);
+      goto done;
+    }
+    free(file_name_copy);
 
   /* Open executable file. */
   file = filesys_open (file_name);

@@ -33,57 +33,71 @@ syscall_init (void)
 }
 
 static void
-syscall_handler (struct intr_frame *f UNUSED) 
+syscall_handler (struct intr_frame *f UNUSED)
 {
-  uint32_t *sp = (uint32_t *) f->esp;
-
-  switch(sp[0]){
-	  case SYS_HALT:
-		  halt();
-		  break;
-	  case SYS_EXIT:
-		  exit((int) sp[1]);
-		  break;
-	  case SYS_EXEC:
-		  if (exec((const char *) sp[1]) == -1){
-			  exit(-1);
-		  }
-		  break;
-	  case SYS_WAIT:
-		  f->eax = process_wait((pid_t) sp[1]);
-		  break;
-	  case SYS_CREATE:
-		  f->eax = create((const char *) sp[1], (unsigned) sp[2]);
-		  break;
-	  case SYS_REMOVE:
-		  f->eax = remove((const char *) sp[1]);
-		  break;
-	  case SYS_OPEN:
-		  f->eax = open((const char *) sp[1]);
-		  break;
-	  case SYS_FILESIZE:
-		  f->eax = filesize((int) sp[1]);
-		  break;
-	  case SYS_READ:
-		  f->eax = read((int) sp[1], (void *) sp[2], (unsigned) sp[3]);
-		  break;
-	  case SYS_WRITE:
-		  f->eax = write((int) sp[1], (const void *) sp[2], (unsigned) sp[3]);
-		  break;
-	  case SYS_SEEK:
-		  seek((int) sp[1], (const void *) sp[2]);
-		  break;
-	  case SYS_TELL:
-		  f->eax = tell((int) sp[1]);
-		  break;
-	  case SYS_CLOSE:
-		  close((int) sp[1]);
-		  break;
-	  default:
-		  exit(-1);
-		  break;
+  switch(*(int32_t*)(f->esp)){
+    case SYS_HALT:                   /* Halt the operating system. */
+    halt();
+    break;
+    case SYS_EXIT:                   /* Terminate this process. */
+    check_address(f->esp+4);
+    exit(*(int*)(f->esp+4));
+    break;
+    case SYS_EXEC:                   /* Start another process. */
+    check_address(f->esp+4);
+    f->eax=exec((char*)*(uint32_t*)(f->esp+4));
+    break;
+    case SYS_WAIT:                   /* Wait for a child process to die. */
+    check_address(f->esp+4);
+    f->eax = wait(*(uint32_t*)(f->esp+4));
+    break;
+    case SYS_CREATE:                 /* Create a file. */
+    check_address(f->esp+4);
+    check_address(f->esp+8);
+    f->eax = create((char*)*(uint32_t*)(f->esp+4), *(uint32_t*)(f->esp+8));
+    break;
+    case SYS_REMOVE:                 /* Delete a file. */
+    check_address(f->esp+4);
+    f->eax = remove((char*)*(uint32_t*)(f->esp+4));
+    break;
+    case SYS_OPEN:                   /* Open a file. */
+    check_address(f->esp+4);
+    f->eax = open((char*)*(uint32_t*)(f->esp+4));
+    break;
+    case SYS_FILESIZE:               /* Obtain a file's size. */
+    check_address(f->esp+4);
+    f->eax = filesize(*(uint32_t*)(f->esp+4));
+    break;
+    case SYS_READ:                   /* Read from a file. */
+    check_address(f->esp+4);
+    check_address(f->esp+8);
+    check_address(f->esp+12);
+    f->eax = read((int)*(uint32_t*)(f->esp+4), (void*)*(uint32_t*)(f->esp+8),
+					(unsigned)*(uint32_t*)(f->esp+12));
+    break;
+    case SYS_WRITE:                  /* Write to a file. */
+    //printf("write system call!\n");
+    check_address(f->esp+4);
+    check_address(f->esp+8);
+    check_address(f->esp+12);
+    f->eax = write((int)*(uint32_t*)(f->esp+4), (const void*)*(uint32_t*)(f->esp+8),
+					(unsigned)*(uint32_t*)(f->esp+12));
+    break;
+    case SYS_SEEK:                   /* Change position in a file. */
+    check_address(f->esp+4);
+    check_address(f->esp+8);
+    seek((int)*(uint32_t*)(f->esp+4), (unsigned)*(uint32_t*)(f->esp+8));
+    break;
+    case SYS_TELL:                   /* Report current position in a file. */
+    check_address(f->esp+4);
+    f->eax = tell((int)*(uint32_t*)(f->esp+4));
+    break;
+    case SYS_CLOSE:                  /* Close a file. */
+    check_address(f->esp+4);
+    close(*(uint32_t*)(f->esp+4));
+    break;
   }
-  //printf ("system call!\n");
+  //printf ("system call! %d\n", *(int32_t*)(f->esp));
   //thread_exit ();
 }
 
@@ -130,7 +144,7 @@ void check_address(const void *addr) {
 }
 
 int wait(pid_t pid){
-  process_wait(pid);
+  return process_wait(pid);
 }
 
 bool create (const char *file, unsigned initial_size) {
