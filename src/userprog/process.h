@@ -11,6 +11,7 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
+void construct_stack(const char* file_name, void** esp);
 struct thread *get_child_process(int pid);
 void process_close_file(int fd);
 int process_add_file(struct file *f);

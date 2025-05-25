@@ -235,31 +235,22 @@ load (const char *file_name, void (**eip) (void), void **esp)
   off_t file_ofs;
   bool success = false;
   int i;
-  char *file_name_copy;
-  char *file_name_first_word;
+  
+  char *file_name_copy = malloc(strlen(file_name) + 1);
+  strlcpy(file_name_copy, file_name, strlen(file_name)+1);
   char *save_ptr;
+  char *file_name_first_word = strtok_r(file_name_copy, " ", &save_ptr);
 
-  printf("load: entering...\n");
+  int process_wait (tid_t child_tid UNUSED) {
+  timer_msleep(2000);
+  return -1;
+}
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
 
-   file_name_copy = malloc(strlen(file_name) + 1);
-  if (file_name_copy == NULL)
-    goto done;
-  strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
-  
-  file_name_first_word = strtok_r(file_name_copy, " ", &save_ptr);
-  if (file_name_first_word == NULL)
-  {
-    printf("load: invalid command line: '%s'\n", file_name);
-    free(file_name_copy);
-    goto done;}
-  
-
-  /* Open executable file. */
   file = filesys_open (file_name_first_word);
   if (file == NULL)
     {
@@ -267,7 +258,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       free(file_name_copy);
       goto done;
     }
-    free(file_name_copy);
+  free(file_name_copy);
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -359,9 +350,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
+  if (file != NULL) {
+    file_allow_write(file);
 
-  if (file_name_copy != NULL)
-    free(file_name_copy);
+  }
 
   /* We arrive here whether the load is successful or not. */
   file_close (file);
@@ -546,4 +538,75 @@ void process_close_file(int fd){
     file_close(t->fd_table[fd]);
     t->fd_table[fd]=NULL;
   }
+}
+
+
+
+
+void construct_stack(const char* file_name, void** esp){
+  int argc, idx;
+  char** argv;
+  int total_arg_len, cur_arg_len;
+  char file_name_copy[1000];
+  char* file_name_token, *save_ptr;
+
+  strlcpy(file_name_copy, file_name, strlen(file_name)+1);
+  argc=0;
+  // count arg
+  // function name parse
+  file_name_token=strtok_r(file_name_copy, " ", &save_ptr);
+  //printf("tokenized file name : %s\n", file_name_token);
+  // count argument number
+  while(file_name_token!=NULL){
+    file_name_token=strtok_r(NULL, " ", &save_ptr);
+    //printf("tokenized file name : %s\n", file_name_token);
+    argc++;
+  }
+  //printf("arg count : %d\n\n",argc);
+
+  argv=malloc(sizeof(char)*(argc+1));
+  strlcpy(file_name_copy, file_name, strlen(file_name)+1);
+  idx=0;
+  total_arg_len=0;
+  for(file_name_token=strtok_r(file_name_copy, " ", &save_ptr);file_name_token!=NULL;file_name_token=strtok_r(NULL, " ", &save_ptr)){
+    total_arg_len+=strlen(file_name_token)+1;
+    argv[idx]=file_name_token;
+    idx++;
+  }
+
+  for(idx=argc-1;idx>=0;idx--){
+    cur_arg_len=strlen(argv[idx]);
+    *esp-=cur_arg_len+1; // include null character
+    strlcpy(*esp, argv[idx], cur_arg_len+1);
+    argv[idx]=*esp;
+    //printf("file name token %s\n", *esp);
+  }
+
+  /* word alignment */
+  if(total_arg_len%4){
+    *esp-=4-(total_arg_len%4);
+  }
+  /* NULL pointer seltinel ensures that argv[argc] is NULL
+  (required by C standard) */
+  *esp-=4;
+  **((uint32_t**)esp)=0;
+
+  for(idx=argc-1;idx>=0;idx--){
+    *esp-=4;
+    **((uint32_t**)esp)=argv[idx];
+  }
+
+  //argv
+  *esp-=4;
+  **((uint32_t**)esp)=*esp+4;
+
+  //argc
+  *esp-=4;
+  **((uint32_t**)esp)=argc;
+
+  //return address
+  *esp-=4;
+  **((uint32_t**)esp)=0;
+
+  free(argv);
 }
