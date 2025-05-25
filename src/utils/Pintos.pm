@@ -45,6 +45,7 @@ our (%parts);
 sub set_part {
     my ($opt, $arg) = @_;
     my ($role, $source) = $opt =~ /^([a-z]+)(?:-([a-z]+))?/ or die;
+    $source //= 'file';
 
     $role = uc $role;
     $source = 'FILE' if $source eq '';

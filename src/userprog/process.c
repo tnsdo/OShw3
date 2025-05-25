@@ -246,9 +246,18 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
-  strlcpy(file_name_copy, file_name, (strlen(file_name)+1));
-  file_name_first_word=strtok_r(file_name_copy, " ", &save_ptr);
-  printf("\n\n%s\n\n", file_name_first_word);
+   file_name_copy = malloc(strlen(file_name) + 1);
+  if (file_name_copy == NULL)
+    goto done;
+  strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
+  
+  file_name_first_word = strtok_r(file_name_copy, " ", &save_ptr);
+  if (file_name_first_word == NULL)
+  {
+    printf("load: invalid command line: '%s'\n", file_name);
+    free(file_name_copy);
+    goto done;}
+  
 
   /* Open executable file. */
   file = filesys_open (file_name_first_word);
@@ -350,9 +359,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
+
+  if (file_name_copy != NULL)
+    free(file_name_copy);
+
   /* We arrive here whether the load is successful or not. */
   file_close (file);
   return success;
+
 }
 
 /* load() helpers. */
