@@ -6,7 +6,8 @@
 typedef int pid_t;
 
 void syscall_init (void);
-struct lock filesys_lock;
+
+
 void check_address(const void* vaddr);
 void halt(void);
 void exit(int status);
@@ -21,5 +22,5 @@ int write(int fd, const void* buffer, unsigned int size);
 void seek(int fd, unsigned int position);
 unsigned int tell(int fd);
 void close(int fd);
-
-#endif 
+struct lock filesys_lock;
+#endif /* userprog/syscall.h */

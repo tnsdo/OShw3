@@ -87,13 +87,13 @@ timer_elapsed (int64_t then)
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
-timer_sleep(int64_t ticks) 
+timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks();
+  int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-
-  thread_sleep(start + ticks);
+  while (timer_elapsed (start) < ticks) 
+    thread_yield ();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -165,33 +165,14 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
-mlfqs_on_tick(void) {
-  increment_running_recent_cpu();
-
-  if (ticks % TIMER_FREQ == 0) {
-    update_system_load_avg();
-
-    update_all_recent_cpu();
-  }
-
-  if (ticks % 4 == 0)
-    update_all_priorities();
-}
-
-static void
-timer_interrupt(struct intr_frame *args UNUSED) {
+timer_interrupt (struct intr_frame *args UNUSED)
+{
   ticks++;
-  thread_tick();
-
-  if (thread_mlfqs)
-    mlfqs_on_tick();
-
-  thread_awake(ticks);
+  thread_tick ();
 }
-
 
 /* Returns true if LOOPS iterations waits for more than one timer
    tick, otherwise false. */
@@ -263,4 +244,3 @@ real_time_delay (int64_t num, int32_t denom)
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000)); 
 }
-

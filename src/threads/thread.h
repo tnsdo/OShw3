@@ -4,23 +4,10 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include "threads/synch.h"       
-
-#define FDT_PAGES 3
-#define FDCOUNT_LIMIT FDT_PAGES * (1 << 9)
+#include "threads/synch.h"
 
 #define FDTABLE_SIZE 130
-
-// sleep and awake function for thread
-void thread_sleep(int64_t ticks);
-void thread_awake(int64_t ticks);
-
-
-const struct thread *get_thread_from_donated_list(const struct list_elem *e);
-void propagate_priority_donation (void);
-void remove_donations_by_lock (struct lock *lock);
-void update_effective_priority (void);
-
+#define PROCESS_NAME_MAX 32 
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -40,9 +27,6 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-#define NICE_DEFAULT 0
-#define RECENT_CPU_DEFAULT 0
-#define LOAD_AVG_DEFAULT 0
 
 /* A kernel thread or user process.
 
@@ -100,8 +84,6 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
-
-
 struct thread
   {
     /* Owned by thread.c. */
@@ -111,45 +93,32 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
-    int64_t wakeup_time;
-
-
-    int base_priority;                       // 원래 우선순위
-    struct lock *waiting_lock;              // 대기 중인 락
-    struct list donations;               // donation 받은 스레드 리스트
-    struct list_elem donation_elem;          // 리스트용 엘리먼트
-
-    int nice;
-    int recent_cpu;
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+
+
 #ifdef USERPROG
-    struct file *fd_table[FDTABLE_SIZE];
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-
-        /* system call */
+#endif
+    /*project 3 */
     int exit_status;
-    int fd_idx;
-    struct thread *parent_thread;
-    struct semaphore exit_sema;
+    bool load_success;
     struct semaphore load_sema;
     struct list_elem child_thread_elem;
     struct list child_threads;
-    bool load_flag;
-    bool exit_flag;
-
-
-#endif
+    struct thread *parent_thread;
+    struct semaphore exit_sema;
+    struct file* fd_table[FDTABLE_SIZE];
+    char process_name[PROCESS_NAME_MAX];
+    struct file *exec_file;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
 
-// less wakeup time
-bool less_wakeup_time(const struct list_elem *ele1, const struct list_elem *ele2, void *aux UNUSED);
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -187,24 +156,11 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-int64_t get_next_wakeup_time(void);
+static struct thread *next_thread_to_run(void);
+void thread_schedule_tail(struct thread *prev);
+struct thread *get_thread_by_tid(tid_t);
 
-/* Implementation */
-bool thread_compare_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED);
-void yield_if_preempted (void);
-void yield_if_preempted_by(struct thread *t);
-const struct thread *get_thread_from_thread_list(const struct list_elem *e); 
-
-bool generalized_compare_priority(const struct list_elem *, const struct list_elem *, void *);
-
-void update_thread_priority(struct thread *t);
-void update_thread_recent_cpu(struct thread *t);
-void update_system_load_avg(void);
-void increment_running_recent_cpu(void);
-void update_all_recent_cpu(void);
-void update_all_priorities(void);
 
 
 
 #endif /* threads/thread.h */
-

@@ -3,7 +3,6 @@
 
 #include <list.h>
 #include <stdbool.h>
-#include <debug.h>
 
 /* A counting semaphore. */
 struct semaphore 
@@ -50,4 +49,3 @@ void cond_broadcast (struct condition *, struct lock *);
 #define barrier() asm volatile ("" : : : "memory")
 
 #endif /* threads/synch.h */
-

@@ -1,4 +1,5 @@
 #include "userprog/process.h"
+#include "threads/malloc.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
@@ -17,10 +18,16 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "threads/synch.h"
+#include "devices/timer.h"
+#include "userprog/syscall.h"
+
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+/* project 3*/
+struct thread *get_child_process(tid_t pid);
+int i;
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -29,9 +36,13 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
-  printf("process_execute: %s\n", file_name);
   char *fn_copy;
   tid_t tid;
+
+  /* project 3 */
+  char file_name_copy[1000];
+  char* parsed_file_name;
+  char* save_ptr;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -39,11 +50,16 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  
+  /*project 3 */
+  strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
+  parsed_file_name=strtok_r(file_name_copy, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (parsed_file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+ 	palloc_free_page(fn_copy);
+
   return tid;
 }
 
@@ -52,11 +68,10 @@ process_execute (const char *file_name)
 static void
 start_process (void *file_name_)
 {
-  printf("start_process begin\n");
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-
+  
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -64,10 +79,18 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
+
+  /*project 3*/
+  sema_up(&(thread_current()->load_sema));
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  if (!success) {
+	thread_exit();
+}	
+
+  thread_yield();
+
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -77,7 +100,7 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
-  printf("start_process load done: success=%d\n", success);
+  
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -90,21 +113,21 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
+process_wait (tid_t child_tid UNUSED) 
 {
   struct thread* child_thread;
   struct list_elem* elem;
   int exit_status;
 
   child_thread=get_child_process(child_tid);
- 
   if(child_thread==NULL){
-    return -1;
-  }
+	return -1;
+	}
   sema_down(&(child_thread->exit_sema));
   exit_status=child_thread->exit_status;
   list_remove(&(child_thread->child_thread_elem));
-  return exit_status;
+
+return exit_status;
 }
 
 /* Free the current process's resources. */
@@ -113,11 +136,14 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-  int i;
+  
 
+  /* project 3 */
+  file_close(cur->exec_file);
   for(i=3;i<FDTABLE_SIZE;i++){
     process_close_file(i);
-  }
+   }
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -135,7 +161,9 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
 }
+
 
 /* Sets up the CPU for running user code in the current
    thread.
@@ -152,7 +180,7 @@ process_activate (void)
      interrupts. */
   tss_update ();
 }
-
+
 /* We load ELF binaries.  The following definitions are taken
    from the ELF specification, [ELF1], more-or-less verbatim.  */
 
@@ -201,7 +229,6 @@ struct Elf32_Phdr
     Elf32_Word p_align;
   };
 
-/* Values for p_type.  See [ELF1] 2-3. */
 #define PT_NULL    0            /* Ignore. */
 #define PT_LOAD    1            /* Loadable segment. */
 #define PT_DYNAMIC 2            /* Dynamic linking info. */
@@ -235,40 +262,39 @@ load (const char *file_name, void (**eip) (void), void **esp)
   off_t file_ofs;
   bool success = false;
   int i;
-  
+
   char *file_name_copy;
   char *save_ptr;
   char *file_name_first_word;
 
-
+  
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
-
-
+ 
+  /* project 3*/
   file_name_copy=malloc(sizeof(char)*(strlen(file_name)+1));
-  strlcpy(file_name_copy, file_name, (strlen(file_name)));
-  file_name_copy[strlen(file_name)]='\0';
+  ASSERT(file_name_copy != NULL);
+  strlcpy(file_name_copy, file_name, strlen(file_name)+1);
   file_name_first_word=strtok_r(file_name_copy, " ", &save_ptr);
-  printf("\n\n%s\n\n", file_name_first_word);
-  file = filesys_open (file_name_first_word);
-  if (file == NULL)
-    {
-      printf ("load: %s: open failed\n", file_name_first_word);
-      free(file_name_copy);
-      goto done;
-    }
-  free(file_name_copy);
+
+  if (file_name_first_word == NULL || file_name_first_word[0] == '\0') {
+  goto done;
+}
 
   /* Open executable file. */
-  //file = filesys_open (file_name);
+  file = filesys_open (file_name_first_word);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+  free(file_name_copy);
+
+  t->exec_file=file;
+  file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -345,7 +371,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
-  construct_stack(file_name,esp);
+  /* project 3 */
+  construct_stack(file_name, esp);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
@@ -353,17 +380,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
-  if (file != NULL) {
-    file_allow_write(file);
-
-  }
-
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  //file_close (file);
   return success;
-
 }
-
+
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);
@@ -512,6 +533,84 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
+/* project 3 */
+void construct_stack(const char* file_name, void** esp){
+  int argc = 0;
+  char *argv[128];
+  char *token, *save_ptr;
+  char *file_name_copy;
+  int i;
+  size_t total_len = 0;
+  void *stack_bottom = PHYS_BASE - PGSIZE;
+
+  file_name_copy = malloc(strlen(file_name) + 1);
+  strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
+
+  for (token = strtok_r(file_name_copy, " ", &save_ptr); token != NULL;
+       token = strtok_r(NULL, " ", &save_ptr)) {
+  argv[argc++] = token;
+ }
+
+  char *arg_addr[argc];
+  for (i = argc - 1; i >= 0; i--) {
+    size_t len = strlen(argv[i]) + 1;
+    *esp -= len;
+
+    if ((uintptr_t)*esp < (uintptr_t)stack_bottom) {
+      PANIC("Stack overflow: argument string too large");
+    }
+
+    memcpy(*esp, argv[i], len);
+    arg_addr[i] = *esp;
+    total_len += len;
+  }
+
+  size_t word_align = (4 - (total_len % 4)) % 4;
+  *esp -= word_align;
+  if ((uintptr_t)*esp < (uintptr_t)stack_bottom) PANIC("Stack overflow: alignment");
+  memset(*esp, 0, word_align);
+
+  *esp -= sizeof(char *);
+  *(char **)*esp = NULL;
+
+  for (i = argc - 1; i >= 0; i--) {
+    *esp -= sizeof(char *);
+    *(char **)*esp = arg_addr[i];
+  }
+
+
+  char **argv_start = (char **)*esp;
+  *esp -= sizeof(char **);
+  *(char ***)*esp = argv_start;
+
+  *esp -= sizeof(int);
+  *(int *)*esp = argc;
+
+  *esp -= sizeof(void *);
+  *(void **)*esp = 0;
+  
+  if (argc == 0){
+  free(file_name_copy);
+ return;
+}
+  free(file_name_copy);
+}
+
+
+struct thread *get_child_process(tid_t pid){
+  struct thread* child_thread;
+  struct list_elem* elem;
+
+  for(elem=list_begin(&(thread_current()->child_threads)); elem!=list_end(&(thread_current()->child_threads)); elem=list_next(elem)){
+    child_thread=list_entry(elem, struct thread, child_thread_elem);
+    if(pid==child_thread->tid){
+      return child_thread;
+    }
+  }
+  return NULL;
+}
+
+
 int process_add_file(struct file* f){
   struct thread* t = thread_current();
   int i;
@@ -541,75 +640,4 @@ void process_close_file(int fd){
     file_close(t->fd_table[fd]);
     t->fd_table[fd]=NULL;
   }
-}
-
-
-
-
-void construct_stack(const char* file_name, void** esp){
-  int argc, idx;
-  char** argv;
-  int total_arg_len, cur_arg_len;
-  char file_name_copy[1000];
-  char* file_name_token, *save_ptr;
-
-  strlcpy(file_name_copy, file_name, strlen(file_name)+1);
-  argc=0;
-  // count arg
-  // function name parse
-  file_name_token=strtok_r(file_name_copy, " ", &save_ptr);
-  //printf("tokenized file name : %s\n", file_name_token);
-  // count argument number
-  while(file_name_token!=NULL){
-    file_name_token=strtok_r(NULL, " ", &save_ptr);
-    //printf("tokenized file name : %s\n", file_name_token);
-    argc++;
-  }
-  //printf("arg count : %d\n\n",argc);
-
-  argv=malloc(sizeof(char)*(argc+1));
-  strlcpy(file_name_copy, file_name, strlen(file_name)+1);
-  idx=0;
-  total_arg_len=0;
-  for(file_name_token=strtok_r(file_name_copy, " ", &save_ptr);file_name_token!=NULL;file_name_token=strtok_r(NULL, " ", &save_ptr)){
-    total_arg_len+=strlen(file_name_token)+1;
-    argv[idx]=file_name_token;
-    idx++;
-  }
-
-  for(idx=argc-1;idx>=0;idx--){
-    cur_arg_len=strlen(argv[idx]);
-    *esp-=cur_arg_len+1; // include null character
-    strlcpy(*esp, argv[idx], cur_arg_len+1);
-    argv[idx]=*esp;
-    //printf("file name token %s\n", *esp);
-  }
-
-  /* word alignment */
-  if(total_arg_len%4){
-    *esp-=4-(total_arg_len%4);
-  }
-  /* NULL pointer seltinel ensures that argv[argc] is NULL
-  (required by C standard) */
-  *esp-=4;
-  **((uint32_t**)esp)=0;
-
-  for(idx=argc-1;idx>=0;idx--){
-    *esp-=4;
-    **((uint32_t**)esp)=argv[idx];
-  }
-
-  //argv
-  *esp-=4;
-  **((uint32_t**)esp)=*esp+4;
-
-  //argc
-  *esp-=4;
-  **((uint32_t**)esp)=argc;
-
-  //return address
-  *esp-=4;
-  **((uint32_t**)esp)=0;
-
-  free(argv);
 }
